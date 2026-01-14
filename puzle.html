@@ -385,6 +385,7 @@
         const defaultImageSource = "pollinations";
         const freeImageBaseUrl = "https://image.pollinations.ai/prompt/";
         const freeImageMaxSize = 1200;
+        const apiKeyStorageKey = "puzle.apiKey";
         const gameBoard = document.getElementById('game-board');
         const pieceTray = document.getElementById('piece-tray');
         const puzzleMat = document.getElementById('puzzle-mat');
@@ -459,6 +460,11 @@
                 syncSourceUI();
             }
 
+            if (apiKeyInput) {
+                loadStoredApiKey();
+                apiKeyInput.addEventListener('input', () => storeApiKey(apiKeyInput.value.trim()));
+            }
+
             const pBtn = document.getElementById('preview-btn');
             pBtn.addEventListener('pointerdown', () => ghostImage.style.display = 'block');
             pBtn.addEventListener('pointerup', () => ghostImage.style.display = 'none');
@@ -505,6 +511,25 @@
 
         function buildRandomImageUrl(seedValue, size) {
             return `https://picsum.photos/seed/${seedValue}/${size.w}/${size.h}`;
+        }
+
+        function loadStoredApiKey() {
+            if (!apiKeyInput) return;
+            try {
+                const stored = localStorage.getItem(apiKeyStorageKey);
+                if (stored) apiKeyInput.value = stored;
+            } catch (e) {
+                // localStorage may be unavailable.
+            }
+        }
+
+        function storeApiKey(value) {
+            try {
+                if (value) localStorage.setItem(apiKeyStorageKey, value);
+                else localStorage.removeItem(apiKeyStorageKey);
+            } catch (e) {
+                // localStorage may be unavailable.
+            }
         }
 
         function getActiveApiKey() {

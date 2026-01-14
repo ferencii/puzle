@@ -14,12 +14,16 @@
             touch-action: none;
             overflow: hidden;
             font-family: 'Plus Jakarta Sans', sans-serif;
+            min-height: 100svh;
+            display: flex;
+            flex-direction: column;
         }
         
         #main-layout {
             display: grid;
             grid-template-columns: 1fr 360px;
-            height: calc(100vh - 80px);
+            flex: 1 1 auto;
+            min-height: 0;
         }
 
         @media (max-width: 1024px) {
@@ -35,6 +39,8 @@
             background-image: radial-gradient(#1e293b 1px, transparent 1px);
             background-size: 40px 40px;
             overflow: hidden;
+            min-height: 0;
+            touch-action: none;
         }
 
         #puzzle-mat {
@@ -58,6 +64,9 @@
             gap: 4px;
             align-content: flex-start;
             z-index: 60;
+            min-height: 0;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
         }
 
         .piece-slot {
@@ -151,6 +160,47 @@
             background: linear-gradient(45deg, #6366f1, #a855f7);
             mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20,6H12V4a2,2,0,0,0-2-2H4A2,2,0,0,0,2,4V20a2,2,0,0,0,2,2H20a2,2,0,0,0,2-2V8A2,2,0,0,0,20,6ZM10,4V6H4V4ZM20,20H4V8H20Z"/></svg>') no-repeat center;
             -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11.5,8.5 L12.5,8.5 C13.3,8.5 14,9.2 14,10 L14,11 L15,11 C15.8,11 16.5,11.7 16.5,12.5 L16.5,13.5 C16.5,14.3 15.8,15 15,15 L14,15 L14,16 C14,16.8 13.3,17.5 12.5,17.5 L11.5,17.5 C10.7,17.5 10,16.8 10,16 L10,15 L9,15 C8.2,15 7.5,14.3 7.5,13.5 L7.5,12.5 C7.5,11.7 8.2,11 9,11 L10,11 L10,10 C10,9.2 10.7,8.5 11.5,8.5 Z" fill="black"/></svg>') no-repeat center;
+        }
+
+        @media (max-width: 768px) {
+            header {
+                height: auto;
+                padding: 12px 16px;
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+
+            header > div:first-child {
+                flex: 0 0 auto;
+            }
+
+            header > .flex-1 {
+                order: 3;
+                width: 100%;
+                max-width: none;
+                margin: 0;
+            }
+
+            header > .flex.items-center.gap-4 {
+                order: 2;
+                margin-left: auto;
+            }
+
+            #main-layout {
+                grid-template-rows: 1fr minmax(180px, 32svh);
+            }
+
+            #piece-tray {
+                border-left: none;
+                border-top: 1px solid #1e293b;
+                grid-template-columns: repeat(6, minmax(48px, 1fr));
+                gap: 6px;
+                padding: 10px 12px 16px;
+            }
+
+            .piece-slot {
+                border-radius: 8px;
+            }
         }
 
     </style>
@@ -259,6 +309,7 @@
         let config = { cols: 0, rows: 0, pW: 0, pH: 0, tab: 0, drawW: 0, drawH: 0 };
         let gridTabs = { h: [], v: [] };
         let trayPieceScale = 1.0;
+        let activePointerId = null;
 
         const tabPath = [
             { c: 'l', x: 35, y: 0 },
@@ -287,17 +338,16 @@
                 reader.readAsDataURL(file);
             };
 
-            window.addEventListener('mousedown', handlePointerDown);
-            window.addEventListener('mousemove', handlePointerMove);
-            window.addEventListener('mouseup', handlePointerUp);
-            
-            window.addEventListener('touchstart', e => handlePointerDown(e.touches[0]), {passive: false});
-            window.addEventListener('touchmove', e => { if(selectedPiece) { e.preventDefault(); handlePointerMove(e.touches[0]); } }, {passive: false});
-            window.addEventListener('touchend', e => handlePointerUp(e.changedTouches[0]));
+            window.addEventListener('pointerdown', handlePointerDown, { passive: false });
+            window.addEventListener('pointermove', handlePointerMove, { passive: false });
+            window.addEventListener('pointerup', handlePointerUp);
+            window.addEventListener('pointercancel', handlePointerUp);
 
             const pBtn = document.getElementById('preview-btn');
-            pBtn.onmousedown = () => ghostImage.style.display = 'block';
-            pBtn.onmouseup = () => ghostImage.style.display = 'none';
+            pBtn.addEventListener('pointerdown', () => ghostImage.style.display = 'block');
+            pBtn.addEventListener('pointerup', () => ghostImage.style.display = 'none');
+            pBtn.addEventListener('pointerleave', () => ghostImage.style.display = 'none');
+            pBtn.addEventListener('pointercancel', () => ghostImage.style.display = 'none');
         }
 
         function showLoading(show) {
@@ -516,6 +566,8 @@
             const piece = pieces.find(p => p.el === el);
             if (piece.solved) return;
 
+            if (e.cancelable) e.preventDefault();
+            activePointerId = e.pointerId ?? null;
             selectedPiece = piece;
             const rect = el.getBoundingClientRect();
             const boardRect = gameBoard.getBoundingClientRect();
@@ -537,6 +589,8 @@
 
         function handlePointerMove(e) {
             if (!selectedPiece) return;
+            if (activePointerId !== null && e.pointerId !== activePointerId) return;
+            if (e.cancelable) e.preventDefault();
             const boardRect = gameBoard.getBoundingClientRect();
             selectedPiece.el.style.left = (e.clientX - boardRect.left - dragOffset.x) + 'px';
             selectedPiece.el.style.top = (e.clientY - boardRect.top - dragOffset.y) + 'px';
@@ -544,11 +598,18 @@
 
         function handlePointerUp(e) {
             if (!selectedPiece) return;
+            if (activePointerId !== null && e.pointerId !== activePointerId) return;
             const el = selectedPiece.el;
             el.classList.remove('dragging');
+            activePointerId = null;
 
             const trayRect = pieceTray.getBoundingClientRect();
-            const isOverTray = e.clientX > trayRect.left;
+            const isOverTray = (
+                e.clientX >= trayRect.left &&
+                e.clientX <= trayRect.right &&
+                e.clientY >= trayRect.top &&
+                e.clientY <= trayRect.bottom
+            );
 
             if (isOverTray) {
                 returnToTray(selectedPiece);

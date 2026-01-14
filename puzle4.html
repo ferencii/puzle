@@ -290,9 +290,6 @@
 
     <script>
         const apiKey = "";
-        const freeImageProvider = "pollinations";
-        const freeImageBaseUrl = "https://image.pollinations.ai/prompt/";
-        const freeImageMaxSize = 1200;
         const gameBoard = document.getElementById('game-board');
         const pieceTray = document.getElementById('piece-tray');
         const puzzleMat = document.getElementById('puzzle-mat');
@@ -366,40 +363,13 @@
             loadingOverlay.classList.toggle('hidden', !show);
         }
 
-        function getPreferredImageSize() {
-            const boardW = Math.max(1, gameBoard.clientWidth);
-            const boardH = Math.max(1, gameBoard.clientHeight);
-            const ratio = boardW / boardH;
-            let w = freeImageMaxSize;
-            let h = Math.round(freeImageMaxSize / ratio);
-            if (h > freeImageMaxSize) {
-                h = freeImageMaxSize;
-                w = Math.round(freeImageMaxSize * ratio);
-            }
-            return { w, h };
-        }
-
-        function buildFreeImageUrl(prompt) {
-            const safePrompt = encodeURIComponent(prompt);
-            const size = getPreferredImageSize();
-            const seed = Math.floor(Math.random() * 1e9);
-            return `${freeImageBaseUrl}${safePrompt}?width=${size.w}&height=${size.h}&seed=${seed}`;
-        }
-
         async function generateIA(prompt) {
-            const trimmed = prompt.trim();
-            if (!trimmed) return;
-            showLoading(true);
-            statusText.innerText = "Generando imagen...";
+            if (!prompt) return;
             if (!apiKey) {
-                if (freeImageProvider === "pollinations") {
-                    initImage(buildFreeImageUrl(trimmed));
-                    return;
-                }
-                statusText.innerText = "Proveedor gratuito no configurado.";
-                showLoading(false);
+                statusText.innerText = "Falta la API key de IA. Configúrala para crear imágenes.";
                 return;
             }
+            showLoading(true);
             try {
                 const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`, {
                     method: 'POST',
@@ -440,10 +410,6 @@
                 sourceImage.src = src;
                 showLoading(false);
                 statusText.innerText = "Imagen cargada. Selecciona piezas y empieza.";
-            };
-            currentImage.onerror = () => {
-                showLoading(false);
-                statusText.innerText = "No se pudo cargar la imagen.";
             };
         }
 

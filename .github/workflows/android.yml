@@ -1,65 +1,39 @@
 name: Generar APK
-
-on:
-  workflow_dispatch:
-  push:
-    branches: [ main ]
+on: [push]
 
 jobs:
-  build-android:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-
-      - name: 🔧 Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
         with:
-          node-version: '18'
-
-      - name: 📦 Install dependencies
-        run: npm ci
-
-      - name: 🛠️ Build web assets
-        run: npm run build
-
-      - name: ✅ Ensure webDir (www) exists for Capacitor
-        run: |
-          if [ -d ./www ]; then
-            echo "www found"
-          else
-            if [ -d ./build ]; then
-              echo "Copying build -> www"
-              rm -rf www || true
-              mkdir -p www
-              cp -r build/* www/
-            elif [ -d ./dist ]; then
-              echo "Copying dist -> www"
-              rm -rf www || true
-              mkdir -p www
-              cp -r dist/* www/
-            else
-              echo "No build output found. Check capacitor.config.json webDir or build command."
-              ls -la
-              exit 1
-            fi
-          fi
-
-      - name: ☕ Setup Java
-        uses: actions/setup-java@v4
+          node-version: 18
+          
+      - uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: '11'
-
-      - name: ⚙️ Make Gradle wrapper executable
+          distribution: 'zulu'
+          java-version: '17'
+      
+      - name: Instalar y Configurar
         run: |
-          if [ -f android/gradlew ]; then
-            chmod +x android/gradlew
-          fi
-
-      - name: 🔁 Capacitor sync Android
-        run: npx cap sync android
-
-      - name: 🏗️ Build Android (Gradle)
-        working-directory: android
-        run: ./gradlew assembleRelease
+          mkdir -p www
+          cp *.html www/index.html
+          npm install
+          npm install @capacitor/cli @capacitor/core @capacitor/android
+          npx cap init FerenPuzzle com.feren.puzzle --web-dir www
+          npx cap add android
+          npx cap sync
+      
+      - name: Compilar APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+          
+      - name: Subir APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: FerenPuzzle-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk

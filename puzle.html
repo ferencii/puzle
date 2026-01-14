@@ -202,6 +202,10 @@
             min-width: 120px;
         }
 
+        .control-input.key {
+            min-width: 220px;
+        }
+
         .control-hint {
             font-size: 10px;
             font-weight: 700;
@@ -258,6 +262,10 @@
             .control-input,
             .control-select {
                 min-width: 110px;
+            }
+
+            .control-input.key {
+                min-width: 160px;
             }
         }
 
@@ -323,8 +331,11 @@
             <select id="image-source" class="control-select">
                 <option value="pollinations" selected>Pollinations (gratis)</option>
                 <option value="ai">IA (API Key)</option>
-                <option value="random">Aleatoria (Picsum)</option>
             </select>
+        </div>
+        <div id="api-key-wrap" class="control-group hidden">
+            <span class="control-label">API Key</span>
+            <input id="api-key-input" class="control-input key" type="password" placeholder="Pega tu API key">
         </div>
         <div id="seed-wrap" class="control-group">
             <span class="control-label">Semilla</span>
@@ -389,6 +400,8 @@
         const fileInput = document.getElementById('file-input');
         const promptInput = document.getElementById('prompt-input');
         const imageSource = document.getElementById('image-source');
+        const apiKeyInput = document.getElementById('api-key-input');
+        const apiKeyWrap = document.getElementById('api-key-wrap');
         const seedInput = document.getElementById('seed-input');
         const sizeSelect = document.getElementById('size-select');
         const seedWrap = document.getElementById('seed-wrap');
@@ -494,10 +507,16 @@
             return `https://picsum.photos/seed/${seedValue}/${size.w}/${size.h}`;
         }
 
+        function getActiveApiKey() {
+            const fromInput = apiKeyInput ? apiKeyInput.value.trim() : "";
+            return fromInput || apiKey;
+        }
+
         function syncSourceUI() {
             const source = imageSource ? imageSource.value : defaultImageSource;
             const showSeed = source === 'pollinations' || source === 'random';
             if (seedWrap) seedWrap.classList.toggle('hidden', !showSeed);
+            if (apiKeyWrap) apiKeyWrap.classList.toggle('hidden', source !== 'ai');
             if (promptInput) {
                 if (source === 'random') {
                     promptInput.placeholder = "Aleatoria: no necesita prompt";
@@ -510,14 +529,15 @@
         async function generateIA(prompt) {
             const source = imageSource ? imageSource.value : defaultImageSource;
             const trimmed = prompt.trim();
+            const activeApiKey = getActiveApiKey();
 
             if (source !== 'random' && !trimmed) {
                 statusText.innerText = "Escribe un prompt para generar.";
                 return;
             }
 
-            if (source === 'ai' && !apiKey) {
-                statusText.innerText = "Falta la API key de IA. Usa Pollinations o Aleatoria.";
+            if (source === 'ai' && !activeApiKey) {
+                statusText.innerText = "Introduce tu API key para IA o usa Pollinations.";
                 return;
             }
 
@@ -539,7 +559,7 @@
             }
 
             try {
-                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`, {
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${activeApiKey}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ instances: [{ prompt: trimmed }], parameters: { sampleCount: 1 } })

@@ -105,6 +105,8 @@
             touch-action: none;
             user-select: none;
             z-index: 10;
+            transform: scale(var(--board-scale, 1));
+            transform-origin: top left;
         }
 
         .puzzle-piece.in-tray {
@@ -120,7 +122,7 @@
             cursor: grabbing;
             z-index: 1000 !important;
             pointer-events: none;
-            transform: scale(1.05) !important;
+            transform: scale(calc(var(--board-scale, 1) * 1.05)) !important;
             filter: drop-shadow(10px 10px 15px rgba(0,0,0,0.8));
         }
 
@@ -236,14 +238,14 @@
 
         <div class="flex items-center gap-4">
             <select id="piece-count" class="bg-slate-900 text-slate-200 text-xs font-bold border border-slate-700 rounded-xl px-4 py-2.5 outline-none hover:bg-slate-800 transition">
-                <option value="12">12 Piezas</option>
+                <option value="12" selected>12 Piezas</option>
                 <option value="24">24 Piezas</option>
                 <option value="48">48 Piezas</option>
                 <option value="80">80 Piezas</option>
                 <option value="150">150 Piezas</option>
                 <option value="300">300 Piezas</option>
                 <option value="500">500 Piezas</option>
-                <option value="1000" selected>1000 Piezas</option>
+                <option value="1000">1000 Piezas</option>
             </select>
             <button id="preview-btn" class="w-11 h-11 flex items-center justify-center bg-slate-800 rounded-xl text-slate-300 hover:bg-slate-700 transition" title="Ver original">
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -310,6 +312,9 @@
         let gridTabs = { h: [], v: [] };
         let trayPieceScale = 1.0;
         let activePointerId = null;
+        let resizeRaf = null;
+        let baseDrawW = 0;
+        let baseDrawH = 0;
 
         const tabPath = [
             { c: 'l', x: 35, y: 0 },
@@ -342,6 +347,10 @@
             window.addEventListener('pointermove', handlePointerMove, { passive: false });
             window.addEventListener('pointerup', handlePointerUp);
             window.addEventListener('pointercancel', handlePointerUp);
+            window.addEventListener('resize', scheduleResize);
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', scheduleResize);
+            }
 
             const pBtn = document.getElementById('preview-btn');
             pBtn.addEventListener('pointerdown', () => ghostImage.style.display = 'block');
@@ -438,7 +447,7 @@
             config.pH = config.drawH / config.rows;
             config.tab = Math.min(config.pW, config.pH) * 0.25;
 
-            const trayColWidth = (pieceTray.clientWidth / 10) - 6; 
+            const trayColWidth = getTrayColumnWidth();
             const pieceMaxDim = Math.max(config.pW, config.pH) + (config.tab * 3);
             trayPieceScale = trayColWidth / pieceMaxDim;
 
@@ -446,6 +455,9 @@
                 Array.from({length: config.cols}, () => Math.random() < 0.5 ? 1 : -1));
             gridTabs.v = Array.from({length: config.rows}, () => 
                 Array.from({length: config.cols - 1}, () => Math.random() < 0.5 ? 1 : -1));
+
+            baseDrawW = config.drawW;
+            baseDrawH = config.drawH;
 
             createPieces();
             previewContainer.style.display = 'none';
@@ -513,6 +525,7 @@
 
             canvas.classList.add('puzzle-piece', 'in-tray');
             canvas.style.setProperty('--tray-scale', trayPieceScale);
+            canvas.style.setProperty('--board-scale', 1);
 
             return {
                 el: canvas,
@@ -560,6 +573,81 @@
             ghostImage.style.top = puzzleMat.style.top;
         }
 
+        function getTrayColumnWidth() {
+            const styles = getComputedStyle(pieceTray);
+            const cols = styles.gridTemplateColumns;
+            const gap = parseFloat(styles.columnGap || styles.gap) || 0;
+            const colCount = cols ? cols.split(' ').length : 10;
+            if (!colCount) return pieceTray.clientWidth;
+            return (pieceTray.clientWidth - gap * (colCount - 1)) / colCount;
+        }
+
+        function scheduleResize() {
+            if (!currentImage?.src) return;
+            if (resizeRaf) cancelAnimationFrame(resizeRaf);
+            resizeRaf = requestAnimationFrame(() => {
+                resizeRaf = null;
+                updateLayoutForResize();
+            });
+        }
+
+        function updateLayoutForResize() {
+            const hadPieces = pieces.length > 0;
+            const wasActive = hadPieces && puzzleMat.style.display !== 'none';
+            const oldDrawW = config.drawW;
+            const oldDrawH = config.drawH;
+            const oldMatLeft = parseFloat(puzzleMat.style.left) || 0;
+            const oldMatTop = parseFloat(puzzleMat.style.top) || 0;
+
+            calculateDimensions();
+
+            if (!wasActive) return;
+            if (!config.cols || !config.rows || !baseDrawW || !baseDrawH) return;
+
+            config.pW = config.drawW / config.cols;
+            config.pH = config.drawH / config.rows;
+            config.tab = Math.min(config.pW, config.pH) * 0.25;
+
+            const trayColWidth = getTrayColumnWidth();
+            const pieceMaxDim = Math.max(config.pW, config.pH) + (config.tab * 3);
+            trayPieceScale = trayColWidth / pieceMaxDim;
+
+            const newMatLeft = parseFloat(puzzleMat.style.left) || 0;
+            const newMatTop = parseFloat(puzzleMat.style.top) || 0;
+            const bleed = config.tab * 1.5;
+            const boardScale = baseDrawW ? (config.drawW / baseDrawW) : 1;
+
+            pieces.forEach(p => {
+                p.targetX = newMatLeft + (p.c * config.pW) - bleed;
+                p.targetY = newMatTop + (p.r * config.pH) - bleed;
+
+                if (p.inTray) {
+                    p.el.style.setProperty('--tray-scale', trayPieceScale);
+                    p.el.style.removeProperty('--board-scale');
+                    return;
+                }
+
+                p.el.style.setProperty('--board-scale', boardScale);
+
+                if (p.solved) {
+                    p.el.style.left = p.targetX + 'px';
+                    p.el.style.top = p.targetY + 'px';
+                    return;
+                }
+
+                const curX = parseFloat(p.el.style.left);
+                const curY = parseFloat(p.el.style.top);
+                if (!Number.isFinite(curX) || !Number.isFinite(curY) || !oldDrawW || !oldDrawH) return;
+
+                const relX = (curX - oldMatLeft) / oldDrawW;
+                const relY = (curY - oldMatTop) / oldDrawH;
+                p.el.style.left = (newMatLeft + relX * config.drawW) + 'px';
+                p.el.style.top = (newMatTop + relY * config.drawH) + 'px';
+            });
+
+            setupGhost();
+        }
+
         function handlePointerDown(e) {
             const el = e.target;
             if (!el.classList.contains('puzzle-piece')) return;
@@ -580,6 +668,7 @@
                 el.classList.remove('in-tray');
                 el.classList.add('dragging');
                 gameBoard.appendChild(el);
+                el.style.setProperty('--board-scale', baseDrawW ? (config.drawW / baseDrawW) : 1);
                 el.style.left = (e.clientX - boardRect.left - dragOffset.x) + 'px';
                 el.style.top = (e.clientY - boardRect.top - dragOffset.y) + 'px';
             } else {
@@ -633,6 +722,7 @@
             p.inTray = true;
             const el = p.el;
             el.classList.add('in-tray');
+            el.style.removeProperty('--board-scale');
             el.style.left = ""; el.style.top = "";
             const slots = Array.from(pieceTray.children);
             const emptySlot = slots.find(s => s.children.length === 0);

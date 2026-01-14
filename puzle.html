@@ -418,6 +418,10 @@
         let resizeRaf = null;
         let baseDrawW = 0;
         let baseDrawH = 0;
+        let basePW = 0;
+        let basePH = 0;
+        let baseTab = 0;
+        let baseBleed = 0;
 
         const tabPath = [
             { c: 'l', x: 35, y: 0 },
@@ -688,6 +692,10 @@
 
             baseDrawW = config.drawW;
             baseDrawH = config.drawH;
+            basePW = config.pW;
+            basePH = config.pH;
+            baseTab = config.tab;
+            baseBleed = baseTab * 1.5;
 
             createPieces();
             previewContainer.style.display = 'none';
@@ -696,7 +704,7 @@
         }
 
         function createPieces() {
-            const bleed = config.tab * 1.5;
+            const bleed = baseBleed || (config.tab * 1.5);
             let piecesData = [];
             for (let r = 0; r < config.rows; r++) {
                 for (let c = 0; c < config.cols; c++) {
@@ -832,24 +840,26 @@
             calculateDimensions();
 
             if (!wasActive) return;
-            if (!config.cols || !config.rows || !baseDrawW || !baseDrawH) return;
+            if (!config.cols || !config.rows || !baseDrawW || !baseDrawH || !basePW || !basePH || !baseBleed) return;
 
             config.pW = config.drawW / config.cols;
             config.pH = config.drawH / config.rows;
             config.tab = Math.min(config.pW, config.pH) * 0.25;
 
             const trayColWidth = getTrayColumnWidth();
-            const pieceMaxDim = Math.max(config.pW, config.pH) + (config.tab * 3);
+            const pieceMaxDim = Math.max(basePW, basePH) + (baseTab * 3);
             trayPieceScale = trayColWidth / pieceMaxDim;
 
             const newMatLeft = parseFloat(puzzleMat.style.left) || 0;
             const newMatTop = parseFloat(puzzleMat.style.top) || 0;
-            const bleed = config.tab * 1.5;
             const boardScale = baseDrawW ? (config.drawW / baseDrawW) : 1;
+            const scaledBleed = baseBleed * boardScale;
+            const scaledPW = basePW * boardScale;
+            const scaledPH = basePH * boardScale;
 
             pieces.forEach(p => {
-                p.targetX = newMatLeft + (p.c * config.pW) - bleed;
-                p.targetY = newMatTop + (p.r * config.pH) - bleed;
+                p.targetX = newMatLeft + (p.c * scaledPW) - scaledBleed;
+                p.targetY = newMatTop + (p.r * scaledPH) - scaledBleed;
 
                 if (p.inTray) {
                     p.el.style.setProperty('--tray-scale', trayPieceScale);
@@ -889,18 +899,20 @@
             selectedPiece = piece;
             const rect = el.getBoundingClientRect();
             const boardRect = gameBoard.getBoundingClientRect();
+            const boardScale = baseDrawW ? (config.drawW / baseDrawW) : 1;
+            const currentScale = piece.inTray ? trayPieceScale : boardScale;
 
-            dragOffset.x = e.clientX - rect.left;
-            dragOffset.y = e.clientY - rect.top;
+            dragOffset.x = (e.clientX - rect.left) / currentScale;
+            dragOffset.y = (e.clientY - rect.top) / currentScale;
 
             if (piece.inTray) {
                 piece.inTray = false;
                 el.classList.remove('in-tray');
                 el.classList.add('dragging');
                 gameBoard.appendChild(el);
-                el.style.setProperty('--board-scale', baseDrawW ? (config.drawW / baseDrawW) : 1);
-                el.style.left = (e.clientX - boardRect.left - dragOffset.x) + 'px';
-                el.style.top = (e.clientY - boardRect.top - dragOffset.y) + 'px';
+                el.style.setProperty('--board-scale', boardScale);
+                el.style.left = (e.clientX - boardRect.left - (dragOffset.x * boardScale)) + 'px';
+                el.style.top = (e.clientY - boardRect.top - (dragOffset.y * boardScale)) + 'px';
             } else {
                 el.classList.add('dragging');
             }
@@ -911,8 +923,9 @@
             if (activePointerId !== null && e.pointerId !== activePointerId) return;
             if (e.cancelable) e.preventDefault();
             const boardRect = gameBoard.getBoundingClientRect();
-            selectedPiece.el.style.left = (e.clientX - boardRect.left - dragOffset.x) + 'px';
-            selectedPiece.el.style.top = (e.clientY - boardRect.top - dragOffset.y) + 'px';
+            const boardScale = baseDrawW ? (config.drawW / baseDrawW) : 1;
+            selectedPiece.el.style.left = (e.clientX - boardRect.left - (dragOffset.x * boardScale)) + 'px';
+            selectedPiece.el.style.top = (e.clientY - boardRect.top - (dragOffset.y * boardScale)) + 'px';
         }
 
         function handlePointerUp(e) {

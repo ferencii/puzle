@@ -14,16 +14,12 @@
             touch-action: none;
             overflow: hidden;
             font-family: 'Plus Jakarta Sans', sans-serif;
-            min-height: 100svh;
-            display: flex;
-            flex-direction: column;
         }
         
         #main-layout {
             display: grid;
             grid-template-columns: 1fr 360px;
-            flex: 1 1 auto;
-            min-height: 0;
+            height: calc(100vh - 80px);
         }
 
         @media (max-width: 1024px) {
@@ -39,8 +35,6 @@
             background-image: radial-gradient(#1e293b 1px, transparent 1px);
             background-size: 40px 40px;
             overflow: hidden;
-            min-height: 0;
-            touch-action: none;
         }
 
         #puzzle-mat {
@@ -64,9 +58,6 @@
             gap: 4px;
             align-content: flex-start;
             z-index: 60;
-            min-height: 0;
-            -webkit-overflow-scrolling: touch;
-            touch-action: pan-y;
         }
 
         .piece-slot {
@@ -105,8 +96,6 @@
             touch-action: none;
             user-select: none;
             z-index: 10;
-            transform: scale(var(--board-scale, 1));
-            transform-origin: top left;
         }
 
         .puzzle-piece.in-tray {
@@ -122,7 +111,7 @@
             cursor: grabbing;
             z-index: 1000 !important;
             pointer-events: none;
-            transform: scale(calc(var(--board-scale, 1) * 1.05)) !important;
+            transform: scale(1.05) !important;
             filter: drop-shadow(10px 10px 15px rgba(0,0,0,0.8));
         }
 
@@ -164,47 +153,6 @@
             -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11.5,8.5 L12.5,8.5 C13.3,8.5 14,9.2 14,10 L14,11 L15,11 C15.8,11 16.5,11.7 16.5,12.5 L16.5,13.5 C16.5,14.3 15.8,15 15,15 L14,15 L14,16 C14,16.8 13.3,17.5 12.5,17.5 L11.5,17.5 C10.7,17.5 10,16.8 10,16 L10,15 L9,15 C8.2,15 7.5,14.3 7.5,13.5 L7.5,12.5 C7.5,11.7 8.2,11 9,11 L10,11 L10,10 C10,9.2 10.7,8.5 11.5,8.5 Z" fill="black"/></svg>') no-repeat center;
         }
 
-        @media (max-width: 768px) {
-            header {
-                height: auto;
-                padding: 12px 16px;
-                flex-wrap: wrap;
-                gap: 10px;
-            }
-
-            header > div:first-child {
-                flex: 0 0 auto;
-            }
-
-            header > .flex-1 {
-                order: 3;
-                width: 100%;
-                max-width: none;
-                margin: 0;
-            }
-
-            header > .flex.items-center.gap-4 {
-                order: 2;
-                margin-left: auto;
-            }
-
-            #main-layout {
-                grid-template-rows: 1fr minmax(180px, 32svh);
-            }
-
-            #piece-tray {
-                border-left: none;
-                border-top: 1px solid #1e293b;
-                grid-template-columns: repeat(6, minmax(48px, 1fr));
-                gap: 6px;
-                padding: 10px 12px 16px;
-            }
-
-            .piece-slot {
-                border-radius: 8px;
-            }
-        }
-
     </style>
 </head>
 <body>
@@ -238,14 +186,14 @@
 
         <div class="flex items-center gap-4">
             <select id="piece-count" class="bg-slate-900 text-slate-200 text-xs font-bold border border-slate-700 rounded-xl px-4 py-2.5 outline-none hover:bg-slate-800 transition">
-                <option value="12" selected>12 Piezas</option>
+                <option value="12">12 Piezas</option>
                 <option value="24">24 Piezas</option>
                 <option value="48">48 Piezas</option>
                 <option value="80">80 Piezas</option>
                 <option value="150">150 Piezas</option>
                 <option value="300">300 Piezas</option>
                 <option value="500">500 Piezas</option>
-                <option value="1000">1000 Piezas</option>
+                <option value="1000" selected>1000 Piezas</option>
             </select>
             <button id="preview-btn" class="w-11 h-11 flex items-center justify-center bg-slate-800 rounded-xl text-slate-300 hover:bg-slate-700 transition" title="Ver original">
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -311,10 +259,6 @@
         let config = { cols: 0, rows: 0, pW: 0, pH: 0, tab: 0, drawW: 0, drawH: 0 };
         let gridTabs = { h: [], v: [] };
         let trayPieceScale = 1.0;
-        let activePointerId = null;
-        let resizeRaf = null;
-        let baseDrawW = 0;
-        let baseDrawH = 0;
 
         const tabPath = [
             { c: 'l', x: 35, y: 0 },
@@ -343,20 +287,17 @@
                 reader.readAsDataURL(file);
             };
 
-            window.addEventListener('pointerdown', handlePointerDown, { passive: false });
-            window.addEventListener('pointermove', handlePointerMove, { passive: false });
-            window.addEventListener('pointerup', handlePointerUp);
-            window.addEventListener('pointercancel', handlePointerUp);
-            window.addEventListener('resize', scheduleResize);
-            if (window.visualViewport) {
-                window.visualViewport.addEventListener('resize', scheduleResize);
-            }
+            window.addEventListener('mousedown', handlePointerDown);
+            window.addEventListener('mousemove', handlePointerMove);
+            window.addEventListener('mouseup', handlePointerUp);
+            
+            window.addEventListener('touchstart', e => handlePointerDown(e.touches[0]), {passive: false});
+            window.addEventListener('touchmove', e => { if(selectedPiece) { e.preventDefault(); handlePointerMove(e.touches[0]); } }, {passive: false});
+            window.addEventListener('touchend', e => handlePointerUp(e.changedTouches[0]));
 
             const pBtn = document.getElementById('preview-btn');
-            pBtn.addEventListener('pointerdown', () => ghostImage.style.display = 'block');
-            pBtn.addEventListener('pointerup', () => ghostImage.style.display = 'none');
-            pBtn.addEventListener('pointerleave', () => ghostImage.style.display = 'none');
-            pBtn.addEventListener('pointercancel', () => ghostImage.style.display = 'none');
+            pBtn.onmousedown = () => ghostImage.style.display = 'block';
+            pBtn.onmouseup = () => ghostImage.style.display = 'none';
         }
 
         function showLoading(show) {
@@ -447,7 +388,7 @@
             config.pH = config.drawH / config.rows;
             config.tab = Math.min(config.pW, config.pH) * 0.25;
 
-            const trayColWidth = getTrayColumnWidth();
+            const trayColWidth = (pieceTray.clientWidth / 10) - 6; 
             const pieceMaxDim = Math.max(config.pW, config.pH) + (config.tab * 3);
             trayPieceScale = trayColWidth / pieceMaxDim;
 
@@ -455,9 +396,6 @@
                 Array.from({length: config.cols}, () => Math.random() < 0.5 ? 1 : -1));
             gridTabs.v = Array.from({length: config.rows}, () => 
                 Array.from({length: config.cols - 1}, () => Math.random() < 0.5 ? 1 : -1));
-
-            baseDrawW = config.drawW;
-            baseDrawH = config.drawH;
 
             createPieces();
             previewContainer.style.display = 'none';
@@ -525,7 +463,6 @@
 
             canvas.classList.add('puzzle-piece', 'in-tray');
             canvas.style.setProperty('--tray-scale', trayPieceScale);
-            canvas.style.setProperty('--board-scale', 1);
 
             return {
                 el: canvas,
@@ -573,89 +510,12 @@
             ghostImage.style.top = puzzleMat.style.top;
         }
 
-        function getTrayColumnWidth() {
-            const styles = getComputedStyle(pieceTray);
-            const cols = styles.gridTemplateColumns;
-            const gap = parseFloat(styles.columnGap || styles.gap) || 0;
-            const colCount = cols ? cols.split(' ').length : 10;
-            if (!colCount) return pieceTray.clientWidth;
-            return (pieceTray.clientWidth - gap * (colCount - 1)) / colCount;
-        }
-
-        function scheduleResize() {
-            if (!currentImage?.src) return;
-            if (resizeRaf) cancelAnimationFrame(resizeRaf);
-            resizeRaf = requestAnimationFrame(() => {
-                resizeRaf = null;
-                updateLayoutForResize();
-            });
-        }
-
-        function updateLayoutForResize() {
-            const hadPieces = pieces.length > 0;
-            const wasActive = hadPieces && puzzleMat.style.display !== 'none';
-            const oldDrawW = config.drawW;
-            const oldDrawH = config.drawH;
-            const oldMatLeft = parseFloat(puzzleMat.style.left) || 0;
-            const oldMatTop = parseFloat(puzzleMat.style.top) || 0;
-
-            calculateDimensions();
-
-            if (!wasActive) return;
-            if (!config.cols || !config.rows || !baseDrawW || !baseDrawH) return;
-
-            config.pW = config.drawW / config.cols;
-            config.pH = config.drawH / config.rows;
-            config.tab = Math.min(config.pW, config.pH) * 0.25;
-
-            const trayColWidth = getTrayColumnWidth();
-            const pieceMaxDim = Math.max(config.pW, config.pH) + (config.tab * 3);
-            trayPieceScale = trayColWidth / pieceMaxDim;
-
-            const newMatLeft = parseFloat(puzzleMat.style.left) || 0;
-            const newMatTop = parseFloat(puzzleMat.style.top) || 0;
-            const bleed = config.tab * 1.5;
-            const boardScale = baseDrawW ? (config.drawW / baseDrawW) : 1;
-
-            pieces.forEach(p => {
-                p.targetX = newMatLeft + (p.c * config.pW) - bleed;
-                p.targetY = newMatTop + (p.r * config.pH) - bleed;
-
-                if (p.inTray) {
-                    p.el.style.setProperty('--tray-scale', trayPieceScale);
-                    p.el.style.removeProperty('--board-scale');
-                    return;
-                }
-
-                p.el.style.setProperty('--board-scale', boardScale);
-
-                if (p.solved) {
-                    p.el.style.left = p.targetX + 'px';
-                    p.el.style.top = p.targetY + 'px';
-                    return;
-                }
-
-                const curX = parseFloat(p.el.style.left);
-                const curY = parseFloat(p.el.style.top);
-                if (!Number.isFinite(curX) || !Number.isFinite(curY) || !oldDrawW || !oldDrawH) return;
-
-                const relX = (curX - oldMatLeft) / oldDrawW;
-                const relY = (curY - oldMatTop) / oldDrawH;
-                p.el.style.left = (newMatLeft + relX * config.drawW) + 'px';
-                p.el.style.top = (newMatTop + relY * config.drawH) + 'px';
-            });
-
-            setupGhost();
-        }
-
         function handlePointerDown(e) {
             const el = e.target;
             if (!el.classList.contains('puzzle-piece')) return;
             const piece = pieces.find(p => p.el === el);
             if (piece.solved) return;
 
-            if (e.cancelable) e.preventDefault();
-            activePointerId = e.pointerId ?? null;
             selectedPiece = piece;
             const rect = el.getBoundingClientRect();
             const boardRect = gameBoard.getBoundingClientRect();
@@ -668,7 +528,6 @@
                 el.classList.remove('in-tray');
                 el.classList.add('dragging');
                 gameBoard.appendChild(el);
-                el.style.setProperty('--board-scale', baseDrawW ? (config.drawW / baseDrawW) : 1);
                 el.style.left = (e.clientX - boardRect.left - dragOffset.x) + 'px';
                 el.style.top = (e.clientY - boardRect.top - dragOffset.y) + 'px';
             } else {
@@ -678,8 +537,6 @@
 
         function handlePointerMove(e) {
             if (!selectedPiece) return;
-            if (activePointerId !== null && e.pointerId !== activePointerId) return;
-            if (e.cancelable) e.preventDefault();
             const boardRect = gameBoard.getBoundingClientRect();
             selectedPiece.el.style.left = (e.clientX - boardRect.left - dragOffset.x) + 'px';
             selectedPiece.el.style.top = (e.clientY - boardRect.top - dragOffset.y) + 'px';
@@ -687,18 +544,11 @@
 
         function handlePointerUp(e) {
             if (!selectedPiece) return;
-            if (activePointerId !== null && e.pointerId !== activePointerId) return;
             const el = selectedPiece.el;
             el.classList.remove('dragging');
-            activePointerId = null;
 
             const trayRect = pieceTray.getBoundingClientRect();
-            const isOverTray = (
-                e.clientX >= trayRect.left &&
-                e.clientX <= trayRect.right &&
-                e.clientY >= trayRect.top &&
-                e.clientY <= trayRect.bottom
-            );
+            const isOverTray = e.clientX > trayRect.left;
 
             if (isOverTray) {
                 returnToTray(selectedPiece);
@@ -722,7 +572,6 @@
             p.inTray = true;
             const el = p.el;
             el.classList.add('in-tray');
-            el.style.removeProperty('--board-scale');
             el.style.left = ""; el.style.top = "";
             const slots = Array.from(pieceTray.children);
             const emptySlot = slots.find(s => s.children.length === 0);

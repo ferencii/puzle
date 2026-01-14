@@ -105,8 +105,6 @@
             touch-action: none;
             user-select: none;
             z-index: 10;
-            transform: scale(var(--board-scale, 1));
-            transform-origin: top left;
         }
 
         .puzzle-piece.in-tray {
@@ -122,7 +120,7 @@
             cursor: grabbing;
             z-index: 1000 !important;
             pointer-events: none;
-            transform: scale(calc(var(--board-scale, 1) * 1.05)) !important;
+            transform: scale(1.05) !important;
             filter: drop-shadow(10px 10px 15px rgba(0,0,0,0.8));
         }
 
@@ -416,12 +414,7 @@
         let trayPieceScale = 1.0;
         let activePointerId = null;
         let resizeRaf = null;
-        let baseDrawW = 0;
-        let baseDrawH = 0;
-        let basePW = 0;
-        let basePH = 0;
-        let baseTab = 0;
-        let baseBleed = 0;
+        let boardResizeObserver = null;
 
         const tabPath = [
             { c: 'l', x: 35, y: 0 },
@@ -457,6 +450,10 @@
             window.addEventListener('resize', scheduleResize);
             if (window.visualViewport) {
                 window.visualViewport.addEventListener('resize', scheduleResize);
+            }
+            if (window.ResizeObserver) {
+                boardResizeObserver = new ResizeObserver(() => scheduleResize());
+                boardResizeObserver.observe(gameBoard);
             }
 
             if (imageSource) {
@@ -690,13 +687,6 @@
             gridTabs.v = Array.from({length: config.rows}, () => 
                 Array.from({length: config.cols - 1}, () => Math.random() < 0.5 ? 1 : -1));
 
-            baseDrawW = config.drawW;
-            baseDrawH = config.drawH;
-            basePW = config.pW;
-            basePH = config.pH;
-            baseTab = config.tab;
-            baseBleed = baseTab * 1.5;
-
             createPieces();
             previewContainer.style.display = 'none';
             puzzleMat.style.display = 'block';
@@ -704,7 +694,7 @@
         }
 
         function createPieces() {
-            const bleed = baseBleed || (config.tab * 1.5);
+            const bleed = config.tab * 1.5;
             let piecesData = [];
             for (let r = 0; r < config.rows; r++) {
                 for (let c = 0; c < config.cols; c++) {
@@ -763,7 +753,6 @@
 
             canvas.classList.add('puzzle-piece', 'in-tray');
             canvas.style.setProperty('--tray-scale', trayPieceScale);
-            canvas.style.setProperty('--board-scale', 1);
 
             return {
                 el: canvas,
@@ -830,61 +819,86 @@
         }
 
         function updateLayoutForResize() {
-            const hadPieces = pieces.length > 0;
-            const wasActive = hadPieces && puzzleMat.style.display !== 'none';
+            const wasActive = pieces.length > 0 && puzzleMat.style.display !== 'none';
             const oldDrawW = config.drawW;
             const oldDrawH = config.drawH;
             const oldMatLeft = parseFloat(puzzleMat.style.left) || 0;
             const oldMatTop = parseFloat(puzzleMat.style.top) || 0;
+            const pieceStates = wasActive ? pieces.map(p => {
+                const curX = parseFloat(p.el.style.left);
+                const curY = parseFloat(p.el.style.top);
+                const hasPos = Number.isFinite(curX) && Number.isFinite(curY) && oldDrawW && oldDrawH;
+                return {
+                    r: p.r,
+                    c: p.c,
+                    solved: p.solved,
+                    inTray: p.inTray,
+                    relX: (!p.inTray && !p.solved && hasPos) ? (curX - oldMatLeft) / oldDrawW : null,
+                    relY: (!p.inTray && !p.solved && hasPos) ? (curY - oldMatTop) / oldDrawH : null
+                };
+            }) : [];
 
             calculateDimensions();
 
-            if (!wasActive) return;
-            if (!config.cols || !config.rows || !baseDrawW || !baseDrawH || !basePW || !basePH || !baseBleed) return;
+            if (!wasActive) {
+                setupGhost();
+                return;
+            }
+            if (!config.cols || !config.rows) return;
 
             config.pW = config.drawW / config.cols;
             config.pH = config.drawH / config.rows;
             config.tab = Math.min(config.pW, config.pH) * 0.25;
 
             const trayColWidth = getTrayColumnWidth();
-            const pieceMaxDim = Math.max(basePW, basePH) + (baseTab * 3);
+            const pieceMaxDim = Math.max(config.pW, config.pH) + (config.tab * 3);
             trayPieceScale = trayColWidth / pieceMaxDim;
 
+            const bleed = config.tab * 1.5;
             const newMatLeft = parseFloat(puzzleMat.style.left) || 0;
             const newMatTop = parseFloat(puzzleMat.style.top) || 0;
-            const boardScale = baseDrawW ? (config.drawW / baseDrawW) : 1;
-            const scaledBleed = baseBleed * boardScale;
-            const scaledPW = basePW * boardScale;
-            const scaledPH = basePH * boardScale;
 
-            pieces.forEach(p => {
-                p.targetX = newMatLeft + (p.c * scaledPW) - scaledBleed;
-                p.targetY = newMatTop + (p.r * scaledPH) - scaledBleed;
+            pieceTray.innerHTML = '';
+            gameBoard.querySelectorAll('.puzzle-piece').forEach(p => p.remove());
+            selectedPiece = null;
+            activePointerId = null;
 
-                if (p.inTray) {
-                    p.el.style.setProperty('--tray-scale', trayPieceScale);
-                    p.el.style.removeProperty('--board-scale');
-                    return;
+            const rebuilt = [];
+            pieceStates.forEach(state => {
+                const piece = createPieceCanvas(state.r, state.c, bleed);
+                piece.solved = state.solved;
+                piece.inTray = state.inTray;
+
+                if (state.inTray) {
+                    piece.el.classList.remove('solved');
+                    piece.el.style.left = "";
+                    piece.el.style.top = "";
+                    const slot = document.createElement('div');
+                    slot.className = 'piece-slot';
+                    slot.appendChild(piece.el);
+                    pieceTray.appendChild(slot);
+                } else {
+                    piece.el.classList.remove('in-tray');
+                    if (state.solved) {
+                        piece.el.classList.add('solved');
+                        piece.el.style.left = piece.targetX + 'px';
+                        piece.el.style.top = piece.targetY + 'px';
+                    } else {
+                        piece.el.classList.remove('solved');
+                        if (Number.isFinite(state.relX) && Number.isFinite(state.relY)) {
+                            piece.el.style.left = (newMatLeft + state.relX * config.drawW) + 'px';
+                            piece.el.style.top = (newMatTop + state.relY * config.drawH) + 'px';
+                        } else {
+                            piece.el.style.left = piece.targetX + 'px';
+                            piece.el.style.top = piece.targetY + 'px';
+                        }
+                    }
+                    gameBoard.appendChild(piece.el);
                 }
-
-                p.el.style.setProperty('--board-scale', boardScale);
-
-                if (p.solved) {
-                    p.el.style.left = p.targetX + 'px';
-                    p.el.style.top = p.targetY + 'px';
-                    return;
-                }
-
-                const curX = parseFloat(p.el.style.left);
-                const curY = parseFloat(p.el.style.top);
-                if (!Number.isFinite(curX) || !Number.isFinite(curY) || !oldDrawW || !oldDrawH) return;
-
-                const relX = (curX - oldMatLeft) / oldDrawW;
-                const relY = (curY - oldMatTop) / oldDrawH;
-                p.el.style.left = (newMatLeft + relX * config.drawW) + 'px';
-                p.el.style.top = (newMatTop + relY * config.drawH) + 'px';
+                rebuilt.push(piece);
             });
 
+            pieces = rebuilt;
             setupGhost();
         }
 
@@ -899,20 +913,17 @@
             selectedPiece = piece;
             const rect = el.getBoundingClientRect();
             const boardRect = gameBoard.getBoundingClientRect();
-            const boardScale = baseDrawW ? (config.drawW / baseDrawW) : 1;
-            const currentScale = piece.inTray ? trayPieceScale : boardScale;
 
-            dragOffset.x = (e.clientX - rect.left) / currentScale;
-            dragOffset.y = (e.clientY - rect.top) / currentScale;
+            dragOffset.x = e.clientX - rect.left;
+            dragOffset.y = e.clientY - rect.top;
 
             if (piece.inTray) {
                 piece.inTray = false;
                 el.classList.remove('in-tray');
                 el.classList.add('dragging');
                 gameBoard.appendChild(el);
-                el.style.setProperty('--board-scale', boardScale);
-                el.style.left = (e.clientX - boardRect.left - (dragOffset.x * boardScale)) + 'px';
-                el.style.top = (e.clientY - boardRect.top - (dragOffset.y * boardScale)) + 'px';
+                el.style.left = (e.clientX - boardRect.left - dragOffset.x) + 'px';
+                el.style.top = (e.clientY - boardRect.top - dragOffset.y) + 'px';
             } else {
                 el.classList.add('dragging');
             }
@@ -923,9 +934,8 @@
             if (activePointerId !== null && e.pointerId !== activePointerId) return;
             if (e.cancelable) e.preventDefault();
             const boardRect = gameBoard.getBoundingClientRect();
-            const boardScale = baseDrawW ? (config.drawW / baseDrawW) : 1;
-            selectedPiece.el.style.left = (e.clientX - boardRect.left - (dragOffset.x * boardScale)) + 'px';
-            selectedPiece.el.style.top = (e.clientY - boardRect.top - (dragOffset.y * boardScale)) + 'px';
+            selectedPiece.el.style.left = (e.clientX - boardRect.left - dragOffset.x) + 'px';
+            selectedPiece.el.style.top = (e.clientY - boardRect.top - dragOffset.y) + 'px';
         }
 
         function handlePointerUp(e) {
@@ -965,7 +975,6 @@
             p.inTray = true;
             const el = p.el;
             el.classList.add('in-tray');
-            el.style.removeProperty('--board-scale');
             el.style.left = ""; el.style.top = "";
             const slots = Array.from(pieceTray.children);
             const emptySlot = slots.find(s => s.children.length === 0);
